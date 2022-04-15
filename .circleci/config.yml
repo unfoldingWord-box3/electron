@@ -113,10 +113,31 @@ steps-lint: &steps-lint
           node script/yarn install --frozen-lockfile
           node script/yarn lint
     - run:
+        name: Prepare or Bake AppVeyor Image
+        command: |
+          cd src/electron
+          node script/yarn install --frozen-lockfile
+          node script/prepare-appveyor
+    - run:
         name: Run Script Typechecker
         command: |
           cd src/electron
           node script/yarn tsc -p tsconfig.script.json
+
+steps-prepare-appveyor: &steps-prepare-appveyor
+  steps:
+    - *step-checkout-electron
+    - run:
+        name: Prepare or Bake AppVeyor Image
+        command: |
+          # prepare-appveyor script checks the current DEPS file for the Chromium version,
+          # checks if we have an existing AppVeyor image with that version, and uses it.
+          # If no image is found, a new version is "baked" by replacing the appveyor.yml config
+          # with a "bake-appveyor" config, which bakes the image with the correct version of Chromium.
+          chromium_revision="$(grep -A1 chromium_version src/electron/DEPS | tr -d '\n' | cut -d\' -f4)"
+          cd src/electron
+          node script/yarn install --frozen-lockfile
+          node script/prepare-appveyor
 
 # List of always run jobs.
 jobs:
@@ -127,11 +148,20 @@ jobs:
     environment:
       <<: *env-linux-medium
     <<: *steps-lint
+  prepare-appveyor:
+    executor:
+      name: linux-docker
+      size: medium
+    environment:
+      <<: *env-linux-medium
+    <<: *steps-prepare-appveyor
 
 # Initial setup workflow
 workflows:
   lint:
     jobs:
+      - prepare-appveyor:
+          context: appveyor
       # Job inherited from path-filtering orb
       - path-filtering/filter:
           base-revision: main
